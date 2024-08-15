@@ -2,13 +2,18 @@
   "name": "datavis-backend",
   "module": "index.ts",
   "type": "module",
+  "prisma": {
+    "seed": "node scripts/seed.js"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "prisma": "^5.18.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@prisma/client": "5.18.0",
     "hono": "^4.5.5"
   }
 }
