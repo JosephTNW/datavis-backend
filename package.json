@@ -6,6 +6,7 @@
     "seed": "node scripts/seed.js"
   },
   "devDependencies": {
+    "@gradio/client": "^1.5.0",
     "@types/bun": "latest",
     "prisma": "^5.18.0"
   },
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@prisma/client": "5.18.0",
+    "dotenv": "^16.4.5",
     "hono": "^4.5.5"
   }
 }

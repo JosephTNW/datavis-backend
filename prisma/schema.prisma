@@ -16,7 +16,7 @@ datasource db {
 model Datasets {
   id          String   @id @default(cuid())
   name        String
-  data        Json[]
+  data        Json[]   @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
