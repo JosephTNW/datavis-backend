@@ -1,11 +1,15 @@
 import { PrismaClient } from "@prisma/client";
+import dotenv from "dotenv";
+import bcrypt from "bcrypt";
 
+dotenv.config();
 const client = new PrismaClient();
 
 const datasetsToCreate = [
   {
     id: "1",
     name: "jumlah-kelahiran-dan-kematian-bayi-di-kabupaten-garut-2023",
+    route: "https://satudata.garutkab.go.id/data/jumlah-kelahiran-dan-kematian-bayi-di-kabupaten-garut-2904/",
     data: [
       {
         kode_provinsi: 32,
@@ -432,6 +436,7 @@ const datasetsToCreate = [
   {
     id: "2",
     name: "jumlah-kelahiran-dan-kematian-bayi-di-kabupaten-garut-2022",
+    route: "https://satudata.garutkab.go.id/data/jumlah-kelahiran-dan-kematian-bayi-di-kabupaten-garut-2903/",
     data: [
       {
         kode_provinsi: 32,
@@ -857,22 +862,45 @@ const datasetsToCreate = [
   },
 ];
 
-const seed = async (datasets) => {
+const usersToCreate = [
+  {
+    id: "1",
+    name: "admin",
+    email: "admin@gmail.com",
+    password: await bcrypt.hash("admin123", parseInt(process.env.PASSWORD_SALT_ROUN, 10)),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+]
+
+const seed = async (data, targetDb) => {
   console.log("Seeding data...");
 
-  for (const dataset of datasets) {
-    console.log("creating dataset:", dataset.name);
-    await client.datasets.upsert({
-      where: { id: dataset.id },
-      update: dataset,
-      create: dataset,
+  for (const item of data) {
+    console.log("seeding data:", item.name, "for", targetDb);
+    await client[targetDb].upsert({
+      where: { id: item.id },
+      update: item,
+      create: item,
     });
   }
 };
 
-seed(datasetsToCreate)
+seed(datasetsToCreate, "datasets")
   .then(() => {
     console.log("Data seeded successfully.");
+  })
+  .catch((error) => {
+    console.error("Error seeding data:", error);
+  })
+  .finally(() => {
+    client.$disconnect();
+    console.log("Disconnected from database.");
+  });
+
+seed(usersToCreate, "users")
+  .then(() => {
+    console.log("Data seeded successfully. ");
   })
   .catch((error) => {
     console.error("Error seeding data:", error);

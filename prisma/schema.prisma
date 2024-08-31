@@ -14,9 +14,35 @@ datasource db {
 }
 
 model Datasets {
-  id          String   @id @default(cuid())
-  name        String
-  data        Json[]   @default([])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid()) @unique
+  name      String   @unique
+  route     String   @default("")
+  data      Json[]   @default([])
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+}
+
+model Conversations {
+  id        String   @id @default(cuid()) @unique
+  name      String
+  chat      String[] @default([])
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+}
+
+model Users {
+  id        String    @id @default(cuid()) @unique
+  name      String
+  email     String    @unique
+  password  String
+  createdAt DateTime  @default(now()) @db.Timestamptz()
+  updatedAt DateTime  @updatedAt @db.Timestamptz()
+  Sessions   Sessions[]
+}
+
+model Sessions {
+  id        String   @id @default(cuid()) @unique
+  user      Users    @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now()) @db.Timestamptz()
 }

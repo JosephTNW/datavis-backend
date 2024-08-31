@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import actionRouter from "./routes/action";
+import modelRouter from "./routes/model";
 import dataRouter from "./routes/data";
+import authRouter from "./routes/auth";
 
 const app = new Hono();
 
@@ -11,7 +12,8 @@ app.get("/hello", (c) => {
   return c.json({ message: "Hello, World!" });
 });
 
-app.route("/action", actionRouter);
+app.route("/model", modelRouter);
 app.route("/data", dataRouter);
+app.route("/auth", authRouter);
 
 export default app;
