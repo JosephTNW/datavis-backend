@@ -77,11 +77,14 @@ qwenRouter.post("/conversations", async (c) => {
   });
 
   const conversations = await client.conversations.findMany({
-    select: { id: true, name: true, chat: true, updatedAt: true },
+    select: { id: true, name: true, updatedAt: true },
     where: {
       user: {
         id: userId.userId,
       }
+    },
+    orderBy: {
+      updatedAt: 'desc',
     },
   });
 
@@ -294,12 +297,12 @@ qwenRouter.post("/main", async (c) => {
       }
     }
 
-    return c.json({
-      success: true,
-      extractedJson: extractedJson,
-      datasetContent: datasetContent,
-      relevantData: relevantData
-    });
+    // return c.json({
+    //   success: true,
+    //   extractedJson: extractedJson,
+    //   datasetContent: datasetContent,
+    //   relevantData: relevantData
+    // });
 
     const dataImbuedPrompt = dataPrompt.replace(
       "RELEVANT DATA",
