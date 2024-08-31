@@ -43,9 +43,9 @@ The graph types you can choose and their use cases are:
 - Used to visualize the correlation between 2 large datasets without regard to time.
 
 The action types you can use and their use cases are
-1. "Map all columns"
-- Used to provide an extensive visualization of all columns within the dataset
+1. "Map columns to two axes of the same dataset"
+- Used to provide an extensive visualization of two columns within a dataset
 2. "Sum one column"
 - Used to provide the accumulated sum of a quantitative data in one column
-3. "Frequency Count of one column's data point"
+3. "Frequency count of one column's data point"
 - Used to count the frequency of a data point appearing on one column

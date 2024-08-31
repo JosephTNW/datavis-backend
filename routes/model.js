@@ -27,7 +27,6 @@ const actionPrompt = fetchPrompt(
       let columns = [];
       for (let key in index.data[0]) {
         columns.push(key);
-        console.log(key + " : " + index.data[0][key]);
       }
       return `${i + 1}. ${index.name} \n Columns: [${columns.join(", ")}]`;
     })
@@ -60,6 +59,8 @@ modelRouter.get("/prompt", async (c) => {
   return c.json({ prompt: fileContent });
 });
 
+const modelClient = await Client.connect("Qwen/Qwen2-72B-Instruct");
+
 modelRouter.post("/main", async (c) => {
   try {
     const body = await c.req.json();
@@ -89,8 +90,6 @@ modelRouter.post("/main", async (c) => {
       }
     }
 
-    const modelClient = await Client.connect("Qwen/Qwen2-72B-Instruct");
-
     let conversationHistory = [];
     if (body.conversationId) {
       const conversation = await client.conversations.findFirst({
@@ -118,80 +117,137 @@ modelRouter.post("/main", async (c) => {
     const actionJson = actionResult.data[1][0][1];
     const startIndex = actionJson.indexOf("{");
     const endIndex = actionJson.lastIndexOf("}");
-    const extractedJson = JSON.parse(actionJson.substring(startIndex, endIndex + 1));
+    const extractedJson = JSON.parse(
+      actionJson.substring(startIndex, endIndex + 1)
+    );
 
     // return c.json({
     //   success: true,
     //   extractedJson: extractedJson,
     // });
 
+    let relevantData = {};
+    let datasetContent = [];
+    let datasetName
     for (dataset in extractedJson.datasets) {
-      const datasetName = extractedJson.datasets.name;
-      const datasetIndex = await client.datasets.findFirst({
+      if (datasetName == dataset.name) {
+        break;
+      }
+      datasetName = dataset.name;
+      const currDataset = await client.datasets.findFirst({
         where: {
           name: datasetName,
         },
       });
 
-      if(!datasetIndex.data) {
-        // KODE DOWNLOAD RANDY GUNZ
-      }
-
-      if (!datasetIndex) {
+      if (!currDataset) {
         return c.json({
           success: false,
           message: "Not Found: Invalid Dataset Name",
         });
       }
-    }
 
-      const datasetData = datasetIndex.data;
-      const datasetColumns = Object.keys(datasetData[0]);
-
-      const dataResult = await modelClient.predict("/model_chat_1", {
-        query: body.query,
-        history: [],
-        system: dataPrompt,
-      });
-
-      const dataJson = dataResult.data[1][0][1];
-      const startDataIndex = dataJson.indexOf("{");
-      const endDataIndex = dataJson.lastIndexOf("}");
-      const extractedDataJson = JSON.parse(dataJson.substring(startDataIndex, endDataIndex + 1));
-
-      for (column in extractedDataJson.columns) {
-        const columnName = extractedDataJson.columns[column];
-        if (!datasetColumns.includes(columnName)) {
-          return c.json({
-            success: false,
-            message: "Not Found: Invalid Column Name",
-          });
-        }
+      if (currDataset.data.length == 0) {
+        // KODE DOWNLOAD RANDY GUNZ
       }
 
-      const data = await client.datasets.findMany({
-        where: {
-          name: datasetName,
-        },
-      });
+      datasetContent.push(currDataset);
+    }
 
-      const filteredData = data.filter((row) => {
-        let isValid = true;
-        for (column in extractedDataJson.columns) {
-          const columnName = extractedDataJson.columns[column];
-          if (row[columnName] != extractedDataJson.values[column]) {
-            isValid = false;
-            break;
-          }
+    if (extractedJson.action == "Map columns to two axes of the same dataset") {
+      relevantData.xAxisName = extractedJson.datasets[0].column;
+      relevantData.yAxisName = extractedJson.datasets[1].column;
+      relevantData.name = `X and Y data points of ${relevantData.xAxisName} and ${relevantData.yAxisName}`;
+
+      relevantData.xData = [];
+      relevantData.yData = [];
+
+      for (item in datasetContent) {
+        relevantData.xData.push(item[relevantData.xAxisName]);
+        relevantData.yData.push(item[relevantData.yAxisName]);
+      }
+
+    } else if (extractedJson.action == "Sum one column") {
+      relevantData.sumColumnName = extractedJson.datasets[0].column;
+      relevantData.name = `Sum of ${relevantData.sumColumnName}`;
+      relevantData.sum = 0;
+
+      for (item in datasetContent.data) {
+        relevantData.sum += item[relevantData.sumColumnName];
+      }
+    } else if (
+      extractedJson.action ==
+      "Frequency distribution of one column's data point"
+    ) {
+      relevantData.yData = "count"
+      relevantData.xAxisName = extractedJson.datasets[0].column;
+      for (dataPoint in dataSetContent[relevantData.xAxisName]){ 
+        if (relevantData.xData == dataPoint){
+          relevantData.yData += 1
         }
-        return isValid;
-      });
+      }
+    }
 
-      if (filteredData.length == 0) {
+    const dataImbuedPrompt = dataPrompt.replace(
+      "Here are the relevant data:",
+      "Here are the relevant data: \n " + JSON.stringify(relevantData)
+    );
+
+    modelClient.predict("/model_chat_1", {
+      query: body.query,
+      history: [],
+      system: dataImbuedPrompt,
+    });
+
+    const datasetSampleData = datasetIndex.data;
+    const datasetColumns = Object.keys(datasetSampleData[0]);
+
+    const dataResult = await modelClient.predict("/model_chat_1", {
+      query: body.query,
+      history: [],
+      system: dataPrompt,
+    });
+
+    const dataJson = dataResult.data[1][0][1];
+    const startDataIndex = dataJson.indexOf("{");
+    const endDataIndex = dataJson.lastIndexOf("}");
+    const extractedDataJson = JSON.parse(
+      dataJson.substring(startDataIndex, endDataIndex + 1)
+    );
+
+    for (column in extractedDataJson.columns) {
+      const columnName = extractedDataJson.columns[column];
+      if (!datasetColumns.includes(columnName)) {
         return c.json({
           success: false,
-          message: "Not Found: No data found",
+          message: "Not Found: Invalid Column Name",
         });
+      }
+    }
+
+    const data = await client.datasets.findMany({
+      where: {
+        name: datasetName,
+      },
+    });
+
+    const filteredData = data.filter((row) => {
+      let isValid = true;
+      for (column in extractedDataJson.columns) {
+        const columnName = extractedDataJson.columns[column];
+        if (row[columnName] != extractedDataJson.values[column]) {
+          isValid = false;
+          break;
+        }
+      }
+      return isValid;
+    });
+
+    if (filteredData.length == 0) {
+      return c.json({
+        success: false,
+        message: "Not Found: No data found",
+      });
     }
 
     let conversationName;
