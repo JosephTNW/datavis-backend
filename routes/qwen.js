@@ -6,11 +6,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const url = 'https://dashscope-intl.aliyuncs.com/api/v1/apps/32ca75a66c144c5fa9dd2fd10345be1a/completion';
+const url =
+  "https://dashscope-intl.aliyuncs.com/api/v1/apps/32ca75a66c144c5fa9dd2fd10345be1a/completion";
 
 const headers = {
-  'Authorization': `Bearer ${process.env.DASHSCOPE_TOKEN}`,
-  'Content-Type': 'application/json'
+  Authorization: `Bearer ${process.env.DASHSCOPE_TOKEN}`,
+  "Content-Type": "application/json",
 };
 
 const qwenRouter = new Hono();
@@ -81,18 +82,21 @@ qwenRouter.post("/conversations", async (c) => {
     where: {
       user: {
         id: userId.userId,
-      }
+      },
     },
     orderBy: {
-      updatedAt: 'desc',
+      updatedAt: "desc",
     },
   });
 
-  return c.json({ success: true, conversations: JSON.stringify(conversations) });
-})
+  return c.json({
+    success: true,
+    conversations: JSON.stringify(conversations),
+  });
+});
 
 qwenRouter.get("/conversations/:convId", async (c) => {
-  const id = c.req.param('convId')
+  const id = c.req.param("convId");
 
   const conversation = await client.conversations.findFirst({
     select: { chat: true, name: true, updatedAt: true },
@@ -162,159 +166,215 @@ qwenRouter.post("/main", async (c) => {
 
     const actionData = {
       input: {
-        prompt: body.query
+        prompt: body.query,
       },
       parameters: {},
-      debug: {}
+      debug: {},
     };
 
     let actionResult = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: headers,
-      body: JSON.stringify(actionData)
+      body: JSON.stringify(actionData),
     });
 
-    console.log('Response status:', actionResult.status);
-    console.log('Response headers:', actionResult.headers);
+    console.log("Response status:", actionResult.status);
+    console.log("Response headers:", actionResult.headers);
 
     actionResult = await actionResult.json();
-    console.log('Response body:', JSON.stringify(actionResult));
+    console.log("Response body:", JSON.stringify(actionResult));
 
-    const actionJson = actionResult.output.text;
-    const startIndex = actionJson.indexOf("{");
-    const endIndex = actionJson.lastIndexOf("}");
-    const extractedJson = JSON.parse(
-      actionJson.substring(startIndex, endIndex + 1)
-    );
-
-    // return c.json({
-    //   success: true,
-    //   extractedJson: extractedJson.datasets,
-    // });
-
-    let relevantData = {}
+    let relevantData = {};
     let datasetContent = {};
     let datasetName = "";
-    for (const dataset of extractedJson.datasets) {
-      if (datasetName == dataset.name) {
-        break;
-      }
-      datasetName = dataset.name;
-    
-      try {
-        const currDataset = await client.datasets.findFirst({
-          select: { data: true },
-          where: {
-            name: datasetName,
-          },
-        });
-    
-        if (!currDataset) {
-          return c.json({
-            success: false,
-            message: "Not Found: Invalid Dataset Name",
+    let dataImbuedPrompt =
+      "You are an assistant that will respond to the user's queries.";
+    let extractedJson = {};
+    const actionJson = actionResult.output.text;
+    const match = actionJson.match(/{.*}/);
+    if (match) {
+      const startIndex = actionJson.indexOf("{");
+      const endIndex = actionJson.lastIndexOf("}");
+      extractedJson = JSON.parse(
+        actionJson.substring(startIndex, endIndex + 1)
+      );
+
+      // return c.json({
+      //   success: true,
+      //   extractedJson: extractedJson.datasets,
+      // });
+
+      if (!extractedJson.error) {
+        for (const dataset of extractedJson.datasets) {
+          if (datasetName == dataset.name) {
+            break;
+          }
+          datasetName = dataset.name;
+
+          try {
+            const currDataset = await client.datasets.findFirst({
+              select: { data: true },
+              where: {
+                name: datasetName,
+              },
+            });
+
+            if (!currDataset) {
+              return c.json({
+                success: false,
+                message: "Not Found: Invalid Dataset Name",
+              });
+            }
+
+            if (currDataset.data.length == 0) {
+              // KODE DOWNLOAD RANDY GUNZ
+            }
+
+            datasetContent = currDataset.data;
+          } catch (error) {
+            console.error("Error fetching dataset:", error);
+            return c.json({
+              success: false,
+              message: "An error occurred while fetching the dataset",
+            });
+          }
+        }
+
+        // return c.json({
+        //   success: true,
+        //   extractedJson: extractedJson,
+        //   datasetContent: datasetContent,
+        // });
+
+        if (
+          extractedJson.action == "Map columns to two axes of the same dataset"
+        ) {
+          relevantData.xAxisName = extractedJson.datasets[0].column;
+          relevantData.yAxisName = extractedJson.datasets[1].column;
+          relevantData.name = `X and Y data points of ${relevantData.xAxisName} and ${relevantData.yAxisName}`;
+
+          relevantData.xData = [];
+          relevantData.yData = [];
+
+          datasetContent.forEach((row) => {
+            relevantData.xData.push(row[relevantData.xAxisName]);
+            relevantData.yData.push(row[relevantData.yAxisName]);
+          });
+        } else if (extractedJson.action == "Sum one column") {
+          relevantData.sumColumnName = extractedJson.datasets[0].column;
+          relevantData.name = `Sum of ${relevantData.sumColumnName}`;
+          relevantData.sum = 0;
+
+          datasetContent.forEach((item) => {
+            relevantData.sum += item[relevantData.sumColumnName];
+          });
+        } else if (
+          extractedJson.action == "Frequency count of one column's data point"
+        ) {
+          relevantData.yAxisName = "count";
+          relevantData.xAxisName = extractedJson.datasets[0].column;
+
+          // Calculate the number of bins using Sturges' formula
+          const n = datasetContent.length;
+          const numBins = Math.ceil(1 + 3.322 * Math.log10(n));
+
+          // Determine min and max values for the data
+          const dataValues = datasetContent.map(
+            (dataPoint) => dataPoint[relevantData.xAxisName]
+          );
+          const minValue = Math.min(...dataValues);
+          const maxValue = Math.max(...dataValues);
+
+          // Calculate bin width
+          const binWidth = (maxValue - minValue) / numBins;
+
+          // Initialize xData and yData
+          relevantData.xData = [];
+          relevantData.yData = new Array(numBins).fill(0);
+
+          // Iterate through datasetContent to calculate frequency distribution
+          datasetContent.forEach((dataPoint) => {
+            const xValue = dataPoint[relevantData.xAxisName];
+            const binIndex = Math.floor((xValue - minValue) / binWidth);
+
+            // Make sure the last bin includes the maxValue
+            const actualBinIndex = binIndex >= numBins ? numBins - 1 : binIndex;
+            relevantData.yData[actualBinIndex] += 1;
+          });
+
+          // Create bin ranges for xData
+          for (let i = 0; i < numBins; i++) {
+            const rangeStart = minValue + i * binWidth;
+            const rangeEnd = rangeStart + binWidth;
+            relevantData.xData.push(
+              `${rangeStart.toFixed(2)} - ${rangeEnd.toFixed(2)}`
+            );
+          }
+        } else if (
+          extractedJson.action ==
+          "Show proportion of a categorical column's percentage based on a numerical column"
+        ) {
+          relevantData.xAxisName = extractedJson.datasets[0].column;
+          relevantData.yAxisName = extractedJson.datasets[1].column;
+          relevantData.name = `Proportion of ${relevantData.xAxisName} based on ${relevantData.yAxisName}`;
+
+          // Calculate the total sum of the y-axis column
+          const totalSum = datasetContent.reduce(
+            (acc, curr) => acc + curr[relevantData.yAxisName],
+            0
+          );
+
+          // Initialize xData and yData
+          relevantData.xData = [];
+          relevantData.yData = [];
+
+          // Iterate through datasetContent to calculate proportions
+          datasetContent.forEach((dataPoint) => {
+            const xValue = dataPoint[relevantData.xAxisName];
+            const yValue = dataPoint[relevantData.yAxisName];
+
+            relevantData.xData.push(xValue);
+            relevantData.yData.push((yValue / totalSum) * 100);
           });
         }
-    
-        if (currDataset.data.length == 0) {
-          // KODE DOWNLOAD RANDY GUNZ
-        }
-    
-        datasetContent = currDataset.data;
-      } catch (error) {
-        console.error("Error fetching dataset:", error);
-        return c.json({
-          success: false,
-          message: "An error occurred while fetching the dataset",
-        });
-      }
-    }
-    
-    // return c.json({
-    //   success: true,
-    //   extractedJson: extractedJson,
-    //   datasetContent: datasetContent,
-    // });
 
-    if (extractedJson.action == "Map columns to two axes of the same dataset") {
-      relevantData.xAxisName = extractedJson.datasets[0].column;
-      relevantData.yAxisName = extractedJson.datasets[1].column;
-      relevantData.name = `X and Y data points of ${relevantData.xAxisName} and ${relevantData.yAxisName}`;
+        // return c.json({
+        //   success: true,
+        //   extractedJson: extractedJson,
+        //   datasetContent: datasetContent,
+        //   relevantData: relevantData
+        // });
 
-      relevantData.xData = [];
-      relevantData.yData = [];
-
-      datasetContent.forEach(row => {
-        relevantData.xData.push(row[relevantData.xAxisName]);
-        relevantData.yData.push(row[relevantData.yAxisName]);
-      }); 
-    } else if (extractedJson.action == "Sum one column") {
-      relevantData.sumColumnName = extractedJson.datasets[0].column;
-      relevantData.name = `Sum of ${relevantData.sumColumnName}`;
-      relevantData.sum = 0;
-
-      datasetContent.forEach(item => {
-        relevantData.sum += item[relevantData.sumColumnName];
-      });
-    } else if (
-      extractedJson.action ==
-      "Frequency count of one column's data point"
-    ) {
-      relevantData.yAxisName = "count";
-      relevantData.xAxisName = extractedJson.datasets[0].column;
-    
-      // Calculate the number of bins using Sturges' formula
-      const n = datasetContent.length;
-      const numBins = Math.ceil(1 + 3.322 * Math.log10(n));
-    
-      // Determine min and max values for the data
-      const dataValues = datasetContent.map(dataPoint => dataPoint[relevantData.xAxisName]);
-      const minValue = Math.min(...dataValues);
-      const maxValue = Math.max(...dataValues);
-    
-      // Calculate bin width
-      const binWidth = (maxValue - minValue) / numBins;
-    
-      // Initialize xData and yData
-      relevantData.xData = [];
-      relevantData.yData = new Array(numBins).fill(0);
-    
-      // Iterate through datasetContent to calculate frequency distribution
-      datasetContent.forEach(dataPoint => {
-        const xValue = dataPoint[relevantData.xAxisName];
-        const binIndex = Math.floor((xValue - minValue) / binWidth);
-    
-        // Make sure the last bin includes the maxValue
-        const actualBinIndex = binIndex >= numBins ? numBins - 1 : binIndex;
-        relevantData.yData[actualBinIndex] += 1;
-      });
-    
-      // Create bin ranges for xData
-      for (let i = 0; i < numBins; i++) {
-        const rangeStart = minValue + i * binWidth;
-        const rangeEnd = rangeStart + binWidth;
-        relevantData.xData.push(`${rangeStart.toFixed(2)} - ${rangeEnd.toFixed(2)}`);
+        dataImbuedPrompt = dataPrompt.replace(
+          "RELEVANT DATA",
+          JSON.stringify(relevantData)
+        );
       }
     }
 
-    // return c.json({
-    //   success: true,
-    //   extractedJson: extractedJson,
-    //   datasetContent: datasetContent,
-    //   relevantData: relevantData
-    // });
+    console.log("Conversation History: ", conversationHistory);
 
-    const dataImbuedPrompt = dataPrompt.replace(
-      "RELEVANT DATA",
-      JSON.stringify(relevantData)
-    );
+    let dataResult;
+    if (conversationHistory.length == 0) {
+      dataResult = await modelClient.predict("/model_chat_1", {
+        query: body.query,
+        history: [],
+        system: dataImbuedPrompt,
+      });
+    } else {
+      let resultArray = [];
 
-    const dataResult = await modelClient.predict("/model_chat_1", {
-      query: body.query,
-      history: [],
-      system: dataImbuedPrompt,
-    });
+      // Loop through the original array, grouping every two elements
+      for (let i = 0; i < conversationHistory.length; i += 2) {
+        resultArray.push([conversationHistory[i], conversationHistory[i + 1]]);
+      }
 
+      dataResult = await modelClient.predict("/model_chat_1", {
+        query: body.query,
+        history: resultArray,
+        system: dataImbuedPrompt,
+      });
+    }
     let conversationName;
     if (conversationHistory.length == 0) {
       conversationName = await modelClient.predict("/model_chat_1", {
@@ -327,7 +387,7 @@ qwenRouter.post("/main", async (c) => {
         data: {
           chat: [body.query, dataResult.data[1][0][1]],
           name: conversationName.data[1][0][1],
-          userId: userId.userId
+          userId: userId.userId,
         },
       });
 
@@ -336,6 +396,7 @@ qwenRouter.post("/main", async (c) => {
         name: conversationName.data[1][0][1],
         relevantData: relevantData,
         conversationId: conversation.id,
+        extractedJson: extractedJson,
       });
     } else {
       await client.conversations.update({

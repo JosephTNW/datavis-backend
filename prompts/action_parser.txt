@@ -49,3 +49,5 @@ The action types you can use and their use cases are
 - Used to provide the accumulated sum of a quantitative data in one column
 3. "Frequency count of one column's data point"
 - Used to count the frequency of a data point appearing on one column
+4. "Show proportion of a categorical column's percentage based on a numerical column"
+- Used to show the proportion of a categorical column within a whole dataset that is represented by a numerical column
