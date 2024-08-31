@@ -6,7 +6,14 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const modelRouter = new Hono();
+const url = 'https://dashscope-intl.aliyuncs.com/api/v1/apps/32ca75a66c144c5fa9dd2fd10345be1a/completion';
+
+const headers = {
+  'Authorization': `Bearer ${process.env.DASHSCOPE_TOKEN}`,
+  'Content-Type': 'application/json'
+};
+
+const qwenRouter = new Hono();
 const client = new PrismaClient();
 
 const fetchIndexes = async () => {
@@ -37,7 +44,7 @@ const dataPrompt = fetchPrompt(String(process.env.DATA_PROMPT_PATH), "utf-8");
 
 const namerPrompt = fetchPrompt(String(process.env.NAMER_PROMPT_PATH), "utf-8");
 
-modelRouter.get("/indexes", async (c) => {
+qwenRouter.get("/indexes", async (c) => {
   return c.json({
     indexes: (await fetchIndexes()).map((index, i) => {
       let columns = [];
@@ -50,7 +57,7 @@ modelRouter.get("/indexes", async (c) => {
   });
 });
 
-modelRouter.get("/prompt", async (c) => {
+qwenRouter.get("/prompt", async (c) => {
   const fileContent = fetchPrompt(
     String(process.env.ACTION_PROMPT_PATH),
     "utf-8"
@@ -59,22 +66,44 @@ modelRouter.get("/prompt", async (c) => {
   return c.json({ prompt: fileContent });
 });
 
-modelRouter.get("/conversations", async (c) => {
+qwenRouter.post("/conversations", async (c) => {
   const body = await c.req.json();
 
-  const conversations = await client.conversations.findMany({
-    select: { name: true, chat: true },
+  const userId = await client.sessions.findFirst({
+    select: { userId: true },
     where: {
-      userId: body.userId,
+      id: body.token,
     },
   });
 
-  return c.json({ success: true, conversations: conversations });
+  const conversations = await client.conversations.findMany({
+    select: { id: true, name: true, chat: true, updatedAt: true },
+    where: {
+      user: {
+        id: userId.userId,
+      }
+    },
+  });
+
+  return c.json({ success: true, conversations: JSON.stringify(conversations) });
 })
+
+qwenRouter.get("/conversations/:convId", async (c) => {
+  const id = c.req.param('convId')
+
+  const conversation = await client.conversations.findFirst({
+    select: { chat: true, name: true, updatedAt: true },
+    where: {
+      id: id,
+    },
+  });
+
+  return c.json({ success: true, conversation: JSON.stringify(conversation) });
+});
 
 const modelClient = await Client.connect("Qwen/Qwen2-72B-Instruct");
 
-modelRouter.post("/main", async (c) => {
+qwenRouter.post("/main", async (c) => {
   try {
     const body = await c.req.json();
 
@@ -103,6 +132,13 @@ modelRouter.post("/main", async (c) => {
       }
     }
 
+    const userId = await client.sessions.findFirst({
+      select: { userId: true },
+      where: {
+        id: body.token,
+      },
+    });
+
     let conversationHistory = [];
     if (body.conversationId) {
       const conversation = await client.conversations.findFirst({
@@ -121,13 +157,27 @@ modelRouter.post("/main", async (c) => {
       conversationHistory = conversation?.chat || [];
     }
 
-    const actionResult = await modelClient.predict("/model_chat_1", {
-      query: body.query,
-      history: [],
-      system: actionPrompt,
+    const actionData = {
+      input: {
+        prompt: body.query
+      },
+      parameters: {},
+      debug: {}
+    };
+
+    let actionResult = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(actionData)
     });
 
-    const actionJson = actionResult.data[1][0][1];
+    console.log('Response status:', actionResult.status);
+    console.log('Response headers:', actionResult.headers);
+
+    actionResult = await actionResult.json();
+    console.log('Response body:', JSON.stringify(actionResult));
+
+    const actionJson = actionResult.output.text;
     const startIndex = actionJson.indexOf("{");
     const endIndex = actionJson.lastIndexOf("}");
     const extractedJson = JSON.parse(
@@ -244,12 +294,12 @@ modelRouter.post("/main", async (c) => {
       }
     }
 
-    // return c.json({
-    //   success: true,
-    //   extractedJson: extractedJson,
-    //   datasetContent: datasetContent,
-    //   relevantData: relevantData
-    // });
+    return c.json({
+      success: true,
+      extractedJson: extractedJson,
+      datasetContent: datasetContent,
+      relevantData: relevantData
+    });
 
     const dataImbuedPrompt = dataPrompt.replace(
       "RELEVANT DATA",
@@ -274,6 +324,7 @@ modelRouter.post("/main", async (c) => {
         data: {
           chat: [body.query, dataResult.data[1][0][1]],
           name: conversationName.data[1][0][1],
+          userId: userId.userId
         },
       });
 
@@ -313,7 +364,7 @@ modelRouter.post("/main", async (c) => {
   }
 });
 
-modelRouter.post("/parse", async (c) => {
+qwenRouter.post("/parse", async (c) => {
   const body = await c.req.json();
 
   const modelClient = await Client.connect("Qwen/Qwen2-72B-Instruct");
@@ -331,4 +382,4 @@ modelRouter.post("/parse", async (c) => {
   return c.json({ success: true, chat: result.data[1][0][1] });
 });
 
-export default modelRouter;
+export default qwenRouter;
