@@ -383,6 +383,14 @@ qwenRouter.post("/main", async (c) => {
         system: namerPrompt,
       });
 
+      const words = conversationName.data[1][0][1].trim().split(/\s+/);
+      // Get the number of words
+      const wordCount = words.length
+
+      if (wordCount >= 5) {
+        conversationName = "Random Words";
+      }
+
       const conversation = await client.conversations.create({
         data: {
           chat: [body.query, dataResult.data[1][0][1]],
