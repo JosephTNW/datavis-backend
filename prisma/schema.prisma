@@ -25,7 +25,7 @@ model Datasets {
 model Conversations {
   id        String   @id @unique @default(cuid())
   name      String
-  chat      String   @default("")
+  chat      String[]   @default([])
   userId    String
   user      Users    @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now()) @db.Timestamptz()
